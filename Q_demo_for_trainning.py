@@ -6,6 +6,7 @@ from torch.utils.data import DataLoader
 import torch.nn as nn
 from torchvision import datasets, transforms
 
+import create_loss as crloss
 import os
 import time
 
@@ -120,7 +121,7 @@ def train(model,train_set,test_set,  # model and data
     # Optimizer  : optim strategy to be completed...
     
     to_optim   = [{'params':model_wrapper.parameters(),'lr':lr,'momentum': momentum ,'weight_decay':wd}]
-    criterion, to_optim = loss.select_loss(loss=loss,e_size = embed_size, metric=metric, lr=lr,momentum=momentum,wd=wd,to_optim=to_optim) # check if the new para are in the cuda or not??
+    criterion, to_optim = crloss.select_loss(loss=loss,e_size = embed_size, metric=metric, lr=lr,momentum=momentum,wd=wd,to_optim=to_optim) # check if the new para are in the cuda or not??
     if torch.cuda.is_available():
         criterion = criterion.cuda()
     
