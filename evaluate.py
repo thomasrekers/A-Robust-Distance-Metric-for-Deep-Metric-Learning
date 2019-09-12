@@ -1,11 +1,20 @@
-def K_nearest_neighbors(anchor, comparisonLabels, comparisonSamples, K):
-    indexRanking = torch.argsort((testSamples - anchor).pow(2).sum(1))
-    K_nearest_labels = testLabels[indexRanking[0:K]]
-    K_nearest_samples = testSamples[indexRanking[0:K]]
-    return (K_nearest_labels, K_nearest_samples)
+import torch
 
-def outputs_to_prediction(model, outputs):
-    return predictions
+def K_nearest_neighbors(anchor, comparisonLabels, comparisonSamples, K):
+    oneMatrix = torch.ones(comparisonSamples.shape)
+    zeroMatrix = torch.zeros(comparisonSamples.shape)
+    oneVector = torch.ones(comparisonLabels.shape)
+    zeroVector = torch.zeros(comparisonLabels.shape)
+    
+    rowSum = torch.where(comparisonLabels == anchor, oneMatrix, zeroMatrix).sum(1)
+    duplicates = torch.where(rowSum != comparisonSamples.shape[1], oneVector, zeroVector)
+    filteredLabels = comparisonLabels[duplicates.nonzero().squeeze().detach()]
+    filteredSamples = comparisonSamples[duplicates.nonzero().squeeze().detach()]
+    
+    indexRanking = torch.argsort((filteredSamples - anchor).pow(2).sum(1))
+    K_nearest_labels = filteredLabels[indexRanking[0:K]]
+    K_nearest_samples = filteredSamples[indexRanking[0:K]]
+    return (K_nearest_labels, K_nearest_samples)
 
 def recall_evaluation(batchLabels, batch, comparisonLabels, comparisonSamples, K):
     N = batchLabels.shape[0]
@@ -48,15 +57,11 @@ def mAP_evaluation(batchLabels, batch, comparisonLabels, comparisonSamples, K):
         aPSum = aPSum + aP_K(batchLabels[i], batch[i], comparisonLabels, comparisonSamples, K)
     return aPSum/N
 
-def f1_evaluation(model, labels, outputs, metric, K):
-    predictions = outputs_to_predictions(outputs)
-    
-    # Calculate true positives, false positives and false negatives
-    truePositives = ...
-    falsePositives = ...
-    falseNegatives = ...
-    
-    precision = truePositives/(truePositives + falsePositives)
-    recall = truePositives/(truePositives + falseNegatives)
-    
+def f1_evaluation(batchLabels, batch, comparisonLabels, comparisonSamples, K):
+    N = batchLabels.shape[0]
+    precisionSum = 0
+    for i in range[0, N]:
+        precisionSum = precisionSum + calculate_precision(batchLabels[i], batch[i], comparisonLabels, comparisonSamples, K)
+    precision = precisionSum/N
+    recall = recall_evaluation(batchLabels, batch, comparisonLabels, comparisonSamples, K)
     return 2*precision*recall/(precision + recall)
