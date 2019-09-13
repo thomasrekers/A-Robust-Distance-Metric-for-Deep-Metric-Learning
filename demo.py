@@ -137,7 +137,7 @@ def train(model,train_set,  # model and data
     # Optimizer  : optim strategy to be completed...
     
     to_optim   = [{'params':model_wrapper.parameters(),'lr':lr,'momentum': momentum ,'weight_decay':wd}]
-    criterion,to_optim = crloss.select_loss(loss=loss,e_size = embed_size, metric=metric, num_cls=num_cls,lambda_=lambda_,lr=lr,momentum=momentum,wd=wd,to_optim=to_optim) # check if the new para are in the cuda or not??
+    criterion,to_optim = crloss.select_loss(loss=loss,e_size = embed_size, metric=metric, sampling_method=sampler,num_cls=num_cls,lambda_=lambda_,lr=lr,momentum=momentum,wd=wd,to_optim=to_optim) # check if the new para are in the cuda or not??
     if torch.cuda.is_available():
         criterion = criterion.cuda()
     
@@ -145,14 +145,17 @@ def train(model,train_set,  # model and data
     optimizer = torch.optim.SGD(to_optim)#model_wrapper.parameters(), lr=lr, momentum=0.9, dampening=0, weight_decay=0, nesterov=False)
     
     # scheduler
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,milestones=[5,9,12,14])
     # ...
     
     # Start log
     with open(os.path.join(save, result_f), 'w') as f:
-        f.write('epoch,train_loss\n')
+        f.write('epoch,train_loss,l_r\n')
+    l_rate = lr
     best_loss = 1000
     pre_loss = 1000
     for epoch in range(n_epochs):
+        scheduler.step()
     
         train_loss = train_epoch(
             model=model_wrapper,
@@ -163,10 +166,12 @@ def train(model,train_set,  # model and data
             n_epochs=n_epochs,
         )
         
-        if abs(pre_loss-train_loss)< 0.004:  # to be decided 
-            for p in optimizer.param_groups:
-                p['lr'] *= 0.1
-                print(p,' lr has been updated')
+        #if abs(pre_loss-train_loss)< 0.005:  # to be decided 
+        
+        for p in optimizer.param_groups:
+            l_rate = p['lr']
+            break
+        
                 
         pre_loss = train_loss
             
@@ -179,9 +184,11 @@ def train(model,train_set,  # model and data
             
         # Log results
         with open(os.path.join(save, result_f), 'a') as f:
-            f.write('%03d,%0.6f\n' % (  #**
+            f.write('%03d,%0.6f,%0.9f\n' % (  #**
                 (epoch + 1),
-                train_loss ))
+                train_loss,
+                l_rate
+                ))
         
             
         
@@ -192,9 +199,9 @@ def train(model,train_set,  # model and data
 
 
 
-def demo(data,list_file,save,lambda_,
-         metric,loss,sampler='dist',embed_size=16,num_cls = 196,  
-         model_saved=None,result='r_new.csv',model_name='m_new.dat',
+def demo(data,save,lambda_,
+         metric,loss,sampler='rand',embed_size=16,num_cls = 196,  
+         model_saved=None,result='r_new.csv',model_name='m_new.dat',list_file = './cars_list.txt',
          batch_size=100,n_epochs = 10,seed=1):
     '''
     Arg:
