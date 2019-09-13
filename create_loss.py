@@ -705,10 +705,12 @@ pr
 		#Sample triplets to use for training.
 		if self.metric_method=='rM' or self.metric_method =='maha':
 			cov = torch.mm(self.L.t(),self.L)
+			
+			print('cov',torch.mean(cov),torch.var(cov))
 		else:
 			cov = torch.tensor(0).cuda()
 	
-		print('cov',torch.mean(cov),torch.var(cov))
+		
 
 		sampled_triplets = self.sampler.give(batch, labels)
 		#Compute triplet loss
