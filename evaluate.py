@@ -6,7 +6,7 @@ def K_nearest_neighbors(anchor, comparisonLabels, comparisonSamples, K):
     oneVector = torch.ones(comparisonLabels.shape)
     zeroVector = torch.zeros(comparisonLabels.shape)
     
-    rowSum = torch.where(comparisonLabels == anchor, oneMatrix, zeroMatrix).sum(1)
+    rowSum = torch.where(comparisonSamples == anchor, oneMatrix, zeroMatrix).sum(1)
     duplicates = torch.where(rowSum != comparisonSamples.shape[1], oneVector, zeroVector)
     filteredLabels = comparisonLabels[duplicates.nonzero().squeeze().detach()]
     filteredSamples = comparisonSamples[duplicates.nonzero().squeeze().detach()]
@@ -34,7 +34,7 @@ def calculate_precision(anchorLabel, anchor, comparisonLabels, comparisonSamples
     for i in range(0, K):
         if anchorLabel == K_nearest_labels[i]:
             absoluteScore = absoluteScore + 1
-    return absoluteScore/K
+    return absoluteScore/(K+1)
 
 def compareLabels(label1, label2):
     return 1 if label1 == label2 else 0
@@ -45,10 +45,10 @@ def aP_K(anchorLabel, anchor, comparisonLabels, comparisonSamples, K):
     K_nearest_labels, _ = K_nearest_neighbors(anchor, comparisonLabels, comparisonSamples, K)
     for i in range(0, K):
         precision = calculate_precision(anchorLabel, anchor, comparisonLabels, comparisonSamples, i)
-        delta = comparisonLabels(anchor, K_nearest_labels[i])
+        delta = compareLabels(anchorLabel, K_nearest_labels[i])
         numeratorSum = numeratorSum + precision*delta
         denominatorSum = denominatorSum + delta
-    return numeratorSum/denominatorSum
+    return 0 if denominatorSum == 0 else numeratorSum/denominatorSum
 
 def mAP_evaluation(batchLabels, batch, comparisonLabels, comparisonSamples, K):
     N = batchLabels.shape[0]
@@ -60,7 +60,7 @@ def mAP_evaluation(batchLabels, batch, comparisonLabels, comparisonSamples, K):
 def f1_evaluation(batchLabels, batch, comparisonLabels, comparisonSamples, K):
     N = batchLabels.shape[0]
     precisionSum = 0
-    for i in range[0, N]:
+    for i in range(0, N):
         precisionSum = precisionSum + calculate_precision(batchLabels[i], batch[i], comparisonLabels, comparisonSamples, K)
     precision = precisionSum/N
     recall = recall_evaluation(batchLabels, batch, comparisonLabels, comparisonSamples, K)
