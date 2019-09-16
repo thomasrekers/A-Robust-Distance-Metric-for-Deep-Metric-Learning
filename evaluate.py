@@ -14,6 +14,16 @@ import os
 import time
 from data.my_dataset import MyDataset
 
+def e_metric(anc, dataset):
+    return (dataset - anc).pow(2).sum(1)
+
+def snr_metric(anc, dataset):
+    lower = (anc - anc.mean()).pow(2).sum()/anc.shape[0]
+    meanMatrix = (dataset - anc).mean(1).repeat(anc.shape[0],1).t()
+    upper = ((dataset - anc) - meanMatrix).pow(2).sum(1)/anc.shape[0]
+    return upper / lower
+    
+
 def K_nearest_neighbors(anchor, comparisonLabels, comparisonSamples, K):
     # useful matrices for filtering anchor out of comparisonSamples
     oneMatrix = torch.ones(comparisonSamples.shape)
@@ -32,7 +42,7 @@ def K_nearest_neighbors(anchor, comparisonLabels, comparisonSamples, K):
     # calculate K nearest neighbors
     # sort samples by distance from anchor
     dist = crloss.Metric('snr')
-    indexRanking = torch.argsort((filteredSamples - anchor).pow(2).sum(1))
+    indexRanking = torch.argsort(e_metric(anchor, filteredSamples))
     # select the K nearest samples
     K_nearest_labels = filteredLabels[indexRanking[0:K]]
     K_nearest_samples = filteredSamples[indexRanking[0:K]]
@@ -99,7 +109,7 @@ def start_evaluation(data, labels_test, model_path, K, batchSize, embSize, loade
         model = model.cuda()
     
     test_set  = MyDataset(dataroot=data,phase='test',image_list_file = 'labels_test.txt')
-    test_loader = DataLoader(dataset=test_set, batch_size=loaderSize,shuffle=True, num_workers=4,pin_memory=torch.cuda.is_available())
+    test_loader = DataLoader(dataset=test_set, batch_size=loaderSize,shuffle=False, num_workers=4,pin_memory=torch.cuda.is_available())
     
     model.eval()
     counter = 0
@@ -115,8 +125,6 @@ def start_evaluation(data, labels_test, model_path, K, batchSize, embSize, loade
             embeddings = model(inputs) # BS* m
             counter = counter + 1
             print(counter)
-            if counter == 9:
-              break
             embeddings = embeddings.to(torch.device("cpu"))
             labels = torch.reshape(labels, (-1,))
             labelData = torch.cat((labelData, labels))
@@ -127,4 +135,4 @@ def start_evaluation(data, labels_test, model_path, K, batchSize, embSize, loade
 
     print(recall_evaluation(batchLabels, batch, labelData, sampleData, K))
 
-start_evaluation('./../cars', './labels_test', './../m_3.dat', 2, 500, 16, 100)
+start_evaluation('./../cars', './labels_test', './../m_0.dat', 2, 600, 16, 500)
