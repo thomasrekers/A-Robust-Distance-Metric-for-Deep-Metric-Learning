@@ -7,6 +7,7 @@
 \usepackage{amssymb}
 \usepackage{caption}
 \captionsetup[figure]{labelformat=empty}% redefines the caption setup of the figures environment in the beamer class.
+\captionsetup[table]{labelformat=empty}
 \usepackage{dsfont}
 \usepackage[ngerman,english]{babel}   	% Deutsches Wörterbuch usw.
 \usepackage{graphicx}	% wird für Figur Umgebung benötigt
@@ -23,6 +24,7 @@
 \usepackage[utf8]{luainputenc}
 \usepackage{graphicx}
 \usepackage{subfig}
+\bibliographystyle{plain} % Darstellung des Literaturverzeichnisses
 \theoremstyle{break}
 \newcommand{\norm}[1]{\left\lVert#1\right\rVert}
 \newtheorem{theorem}{Satz}
@@ -53,21 +55,19 @@ Ziyang Qiu (3565830) and Thomas Rekers (3489800) \\ \\ \\ \\ \\ Report for Advan
 
 \setcounter{page}{1}
 \section{Executive Summary}
-Deep metric learning deals with the learning of discriminative features to process classification tasks and image clustering. It is also called similarity learning and gained increasing attention in recent years. The basic idea of deep metric learning is that the image input data is mapped by a neural network into a multidimensional feature space, where similar samples are mapped close to each other and dissimilar samples are mapped more distant to each other. This report is based on the paper Signal-to-Noise Ratio: A Robust Distance Metric for Deep Metric Learning. At first we will summarize the paper by explaining the two different approaches in metric learning, the structure learning and the distant learning, and introducing the robust SNR distance metric, which is based on Signal-to-Noise Ratio (SNR) for measuring the similarity of images. We give explanations regarding the modifications in the loss functions for training models with the SNR metric and discuss the results from the experiments based on Alexnet in the paper. Afterwards we introduce our own experiments based on Alexnet and Resnet and present the differences between these two network models. As explained in the paper the SNR metric can be considered as a relative Euclidian metric under special circumstances. In this case relative Euclidian metric means that the ratio between the Euclidian distance of two samples and the Euclidian distance of one sample to the origin of the feature space is returned. Therefore we decided to design an analogous relative metric not based on the Euclidian metric but on the Mahalanobis metric and call it relative Mahalanobis metric. We summarize the properties of the mahalanobis as described in the paper Distance Metric Learning for Large Margin Nearest Neighbor Classification and we present the resuts of our experiments including the self-designed relative Mahalanobis metric. Finally we discuss our results by comparing the scores of all metrics used in the experiments.
+Deep metric learning deals with the learning of discriminative features to process classification tasks and image clustering. It is also called similarity learning and gained increasing attention in recent years. The basic idea of deep metric learning is that the image input data is mapped by a neural network into a multidimensional feature space, where similar samples are mapped close to each other and dissimilar samples are mapped more distant to each other. This report is based on the paper \dq Signal-to-Noise Ratio: A Robust Distance Metric for Deep Metric Learning\dq \cite{source1}. At first we will summarize the paper by explaining the two different approaches in metric learning, the structure learning and the distance learning, and introducing the robust SNR distance metric, which is based on Signal-to-Noise Ratio (SNR) for measuring the similarity of images. We give explanations regarding the modifications in the loss functions for training models with the SNR metric and discuss the results from the experiments based on AlexNet in the paper. Afterwards we introduce our own experiments based on AlexNet and ResNet50 and present the differences between these two network models. As explained in the paper the SNR metric can be considered as a relative Euclidian metric under special circumstances. In this case relative Euclidian metric means that the ratio between the Euclidian distance of two samples and the Euclidian distance of one sample to the origin of the feature space is returned. Therefore we decided to design an analogous relative metric not based on the Euclidian metric but on the Mahalanobis metric and call it relative Mahalanobis metric. We summarize the properties of the Mahalanobis metric as described in the paper \dq Distance Metric Learning for Large Margin Nearest Neighbor Classification\dq\cite{weinberger} and we present the resuts of our experiments including the self-designed relative Mahalanobis metric. Finally we discuss our results by comparing the scores of all metrics used in the experiments.
 
 \section{Introduction}
-The fundamental idea of metric learning is to map the input data, in most cases a set of images, into a multidimensional feature space. Similar samples are mapped close to each other in the feature space and dissimilar samples are mapped farther apart. This approach can be used both for classification and clustering tasks. While in conventional metric learning the images are mapped linearly into the feature, in deep metric learning we use deep neural network models like Alexnet or Resnet to get a nonlinear embedding of the input data.
-
+The fundamental idea of metric learning is to map the input data, in most cases a set of images, into a multidimensional feature space. Similar samples are mapped close to each other in the feature space and dissimilar samples are mapped farther apart. This approach can be used both for classification and clustering tasks. While in conventional metric learning the images are mapped linearly into the feature space, in deep metric learning we use deep neural network models like AlexNet or ResNet to get a nonlinear embedding of the input data. \\ \\
 \begin{figure}[h]
 	\centering
   \includegraphics[width=0.7\textwidth]{figure01.png}
   \caption{\textbf{Figure 1:} The flowchart shows the frame work of DML. A given pair of face images $x_1$ and $x_2$ are mapped into the same feature space as $h_1$ and $h_2$ through deep neural networks, where their similarity is calculated.}
 \end{figure}
-
-Because of its great successes in last years deep metric learning is widely applied in face recognition, where the model has to be trained with a very large number of different classes. The contrary approach to deep metric learning is to design a network architecture where as many neurons are in the output layer as different classes are in the dataset. In this case, the model identifies each neuron in the output layer with one class of the dataset and the classification is done by selecting the neuron with the largest output. While this approach becomes problematically in case of a large number of different classes and a small number of samples per class, deep metric learning concepts still show good results. \\
-In case of many different classes the number of classes is usually greater than the number of neurons in the output layer in deep metric learning. Therefore we cannot predict the class by identifying each class with one neuron. Instead the classification follows from the distances in the feature space. For example, the k-Nearest-Neighbor algorithm can be chosen to assign a sample to its class. \\
-In deep metric learning we can distinguish between two different learning approaches. The first and most common approach is structure learning. Structure learning tries to construct more effective structures for the loss functions. For example, many neural network architectures include sampler functions which deliver a customized batch of samples from the feature space to the loss function. Varying the batch size or increasing the number of negative labeled samples in a batch can be strategies in structure learning. The loss function is designed according to the shape of the batch for the backward training. We will introduce such loss function and the shape of their batches in the preliminaries. It is to notice that all loss functions use metrics to get a semantic distance between an anchor sample and a comparison sample in the feature space. But structure learning approaches just try to optimize the sampling for the loss function or the summation and weights inside of the loss function. The metric is not changed in structure learning but is changed in distance learning, what is the second approach of metric learning. \\
-The most common learning processes use the Euclidian metric to calculate the distances of the samples in the feature space. In contrast, distance learning tries to get longer distances between similar and shorter distances between dissimilar sammples in the feature space by choosing a suitable metric inside of the loss function.
+Because of its great successes in last years deep metric learning is widely applied in face recognition, where the model has to be trained with a very large number of different classes. The contrary approach to deep metric learning is to design a network architecture where as many neurons are in the output layer as different classes are in the dataset. In this case, the model identifies each neuron in the output layer with one class of the dataset and the classification is done by selecting the neuron with the largest output. While this approach becomes problematically in case of a large number of different classes and a small number of samples per class, deep metric learning concepts still show good results in such cases. \\ \\
+In case of many different classes the number of classes is usually greater than the number of neurons in the output layer in deep metric learning. Therefore we cannot predict the class by identifying each class with one neuron. Instead the classification follows from the distances in the feature space. For example, the k-Nearest-Neighbor algorithm can be chosen to assign a sample to its class. \\ \\
+In deep metric learning we can distinguish between two different learning approaches. The first and most common approach is structure learning. Structure learning tries to construct more effective structures for the loss functions. For example, many neural network architectures include sampler functions which deliver a customized batch of samples from the feature space to the loss function. Varying the batch size or increasing the number of negative labeled samples in a batch can be strategies in structure learning. The loss function is designed according to the shape of the batch for the backward training. We will introduce such loss functions and the shape of their batches in the preliminaries. It is to notice that all loss functions use metrics to get a semantic distance between an anchor sample and a comparison sample in the feature space. But structure learning approaches just try to optimize the sampling for the loss function or the summation and weights inside of the loss function. The metric is not changed in structure learning but is changed in distance learning, what is the second approach of metric learning. \\ \\
+The most common learning processes use the Euclidian metric to calculate the distances of the samples in the feature space. In contrast, distance learning tries to get longer distances between similar and shorter distances between dissimilar samples in the feature space by choosing a suitable metric inside of the loss function.\cite{source1}
 \section{Preliminaries}
 \subsection{Loss Functions}
 As mentioned before optimizing a neural network by tuning the objective function of the training process is part of structure learning. The loss functions introduced in this chapter are based on the Euclidian metric. We will see later that the loss functions for other metrics look similar, but in some cases we have to add a regularization term.
@@ -76,13 +76,13 @@ The most common structure learning approach is constrastive embedding with its o
 \begin{align}
 L\, = \, \frac{1}{2N}\sum_{(i,j)\in \Gamma}^N\left( yd_{i,j}^2+\left( 1-y\right) \max \left( margin - d_{ij}\right)^2\right)\, ,
 \end{align}
-where $d_{ij}$ is the Euclidean distance between the sample pairs in the feature space. We have $y \, = \, 1$ if two samples are in the same class and $y \, = \, 0$ otherwise. The $margin$ is the threshold to evaluate whether a pair of samples is in the same class or not. Therefore $d_{ij}$ should be greater than the margin in case of a pair of unsimilar samples and less than the margin in case of two samples of the same class. $\Gamma$ is the set of the samples and $N$ is the size of the set.
+where $d_{ij}$ is the Euclidean distance between the sample pairs in the feature space. We have $y \, = \, 1$ if two samples are in the same class and $y \, = \, 0$ otherwise. The $margin$ is the threshold to evaluate whether a pair of samples is in the same class or not. Therefore $d_{ij}$ should be greater than the margin in case of a pair of unsimilar samples and less than the margin in case of two samples of the same class. $\Gamma$ is the set of the samples and $N$ is the size of the set.\cite{contrastive}
 \subsubsection{Triplet Loss}
-Another common objective function is triplet loss. In triplet loss the loss function operates on a set of triplets, where each triplets consists of an anchor sample, a positive sample and a negative sample. Positive means that the considered sample has the same class as the anchor. Otherwise the sample is negative. The objective function affects that the distance between the anchor and the positive sample is smaller than the distance between the anchor and a negative sample with a margin. The formula for triplet loss is
+Another common objective function is triplet loss. In triplet loss the loss function operates on a set of triplets, where each triplet consists of an anchor sample, a positive sample and a negative sample. Positive means that the considered sample has the same class as the anchor. Otherwise the sample is negative. The objective function affects that the distance between the anchor and the positive sample is smaller than the distance between the anchor and a negative sample with a margin. The formula for triplet loss is
 \begin{align}
 L \, = \, \frac{1}{|\Gamma|}\sum_{(i,j,k)\in \Gamma}\max (d_{ij}^2 + m - d_{ik}^2,0)\, ,
 \end{align}
-where $i$ is the index of the anchor, $j$ the index of the positive sample and $k$ the index of the negative sample. $d$ is the Euclidian metric again and $\Gamma$ the set of the samples.
+where $i$ is the index of the anchor, $j$ the index of the positive sample and $k$ the index of the negative sample. $d$ is the Euclidian metric again and $\Gamma$ the set of the samples. \cite{triplet}
 \subsubsection{N-Pair Loss}
 N-pair loss is a generalization of triplet loss by exploiting the possibility to interact with negative samples of all classes. This means that we deal with one positive sample from the same class as the anchor and with $N \, - \, 1$ negative samples, where every negative sample is from a different class of the $N \, - \, 1$ other classes. The formula for N-pair loss is 
 \begin{align}
@@ -101,8 +101,8 @@ where $\alpha$ is the margin parameter. $N$ denotes the set of negative pairs an
   \subfloat[][]{\includegraphics[width=0.4\linewidth]{figure02a.png}}%
   \subfloat[][]{\includegraphics[width=0.4\linewidth]{figure02b.png}}%
   \qquad
-  \subfloat[][]{\includegraphics[width=0.4\linewidth]{figure02a.png}}%
-  \subfloat[][]{\includegraphics[width=0.4\linewidth]{figure02b.png}}%
+  \subfloat[][]{\includegraphics[width=0.4\linewidth]{figure02c.png}}%
+  \subfloat[][]{\includegraphics[width=0.4\linewidth]{figure02d.png}}%
   \caption{\textbf{Figure 2:} Illustration of (a) contrastive loss, (b) triplet loss, (c) N-pair loss and (d) lifted structured loss. The blue circle is anchor, different shapes indicate different classes.}%
 \end{figure}
 \subsection{Distance Metrics}
@@ -330,6 +330,72 @@ Our dataset is CARS196. It consists of 16,185 images of 196 different car models
 \subsection{Implementation Details}
 We used pytorch to implement the neural networks and chose the architecture of Confusezius as basic framework for the training part. The architecture delivers dataloader functions that allow to train the models in customized image batches. Because the loss functions need different batch shapes in the training, we use the preimplemented sampler functions to organize the batches for the loss functions. The loss functions have the metric name as an additional parameter. That allows us to train the same loss function with different metrics. The training is based on $demo.py$ that can be customized via command line parameters. We trained models in AlexNet and ResNet50 architecture. For every architecture we trained with the loss functions triplet loss and lifted loss and trained for all five metrics Euclidean distance $d_E$, SNR distance $d_S$, relative Euclidean distance $d_{rE}$, Mahalanobis distance $d_M$ and relative Mahalanobis distance $d_{rM}$. \\ \\
 The evaluation is based on $evaluate.py$ that can also be customized via command line parameters. We implemented Recall@K, MAP@K and F1@K but only calculated Recall@1 and Recall@2 for the comparison to the results from the paper. Usually the recall is determined by calculating the ratio of true positives to true postives and false negatives. Since we do not use our network for direct classifiation, but just project our input data into a multidimensional feature space, we choose a k-nearest-neighbors approach from the paper to calculate the recall. In this approach, Recall@K is calculated by that an anchor scores one in case of a similar sample in the K-nearest neighborhood. Otherwise, the anchor scores zero. We determine the Recall@K by calculating the arithmetic mean of these scores.
+\subsection{Results}
+At first we started with the repitition of the experiments from the paper. Table 5 shows the results from AlexNet with a 16-dimensional feature space for Recall@1 and Recall@2.
+\begin{table}[h]
+\centering
+  \begin{tabular}{| c | c | c | c |}
+    \hline
+     loss function & metric & Recall@1 & Recall@2 \\ \hline \hline
+    triplet & Euclidean & 23.1 & 34.9 \\ \hline
+    triplet & relative Euclidean & 29.4 & 45.7 \\ \hline
+    triplet & SNR & 31.1 & 43.2 \\ \hline
+    lifted & Euclidean & 26.0 & 39.4 \\ \hline
+    lifted & relative Euclidean & 26.0 & 40.1 \\ \hline
+    lifted & SNR & 30.3 & 41.7 \\
+    \hline
+  \end{tabular}
+  \caption{blabla}
+\end{table}
+Like in the paper, our best combination of loss function and metric for AlexNet in Recall@1 evaluation is triplet loss with the SNR metric. In Recall@2 evaluation, we have the relative Euclidean with the best score which is only 2.5 $\%$ better than the SNR metric. In triplet loss, the relative Euclidean metric and the SNR metric have similar scores what supports the hypothesis that the relative Euclidean metric is an approximation of the SNR metric. Just in in lifted loss with Recall@1 evaluation, we see 4.3 $\%$ difference between SNR and relative Euclidean. Whlie we see strong superiority of SNR in triplet loss and similarity in lifted loss in the paper, our experiments show weak superiority of SNR in both triplet loss and lifted loss. \\ \\
+Table 6 shows the results for ResNet50 with a 16-dimensional feature space for Recall@1 and Recall@2.
+\begin{table}[h]
+\centering
+  \begin{tabular}{| c | c | c | c |}
+    \hline
+     loss function & metric & Recall@1 & Recall@2 \\ \hline \hline
+    triplet & Euclidean & 65.6 & 77.0 \\ \hline
+    triplet & relative Euclidean & 60.7 & 73.5 \\ \hline
+    triplet & SNR & 58.5 & 69.0 \\ \hline
+    triplet & Mahalanobis & 63.9 & 73.5 \\ \hline
+    triplet & relative Mahalanobis & 63.1 & 72.1 \\ \hline
+    lifted & Euclidean & 64.6 & 77.9 \\ \hline
+    lifted & relative Euclidean & 43.4 & 58.5 \\ \hline
+    lifted & SNR & 43.9 & 57.0 \\ \hline
+    lifted & Mahalanobis & 53.9 & 66.7 \\ \hline
+    lifted & relative Mahalanobis & 33.3 & 49.0 \\ \hline
+
+  \end{tabular}
+  \caption{blabla}
+\end{table}
+Triplet loss with Euclidean metric gets the highest score in Recall@1 evaluation and lifted loss with Euclidean metric gets the highest score in Recall@2 evaluation. Both in triplet loss and lifted loss, the Mahalanobis metric is the second best metric behind the Euclidean metric. The relative Mahalanobis metric has in triplet loss an average performance, but gets the worst score in lifted loss. As expected, all evaluation scores from ResNet50 are better than the evaluation scores from AlexNet.
+\subsection{Discussion}
+All in all our experiments for AlexNet support the results from the paper that the SNR metric with triplet loss gets the best evaluation results, even if the superiority in our experiments was not as strong as in the paper. Apart from training AlexNet with lifted loss, our experiments both with AlexNet and ResNet50 verified the hypothesis that the relative Euclidean metric can be seen as an approximation of the SNR metric. The Mahalanobis metric was the second best metric for both loss functions, while the relative Mahalanobis metric had an anverage performance in triplet loss and the worst performance in lifted loss. In contrast to AlexNet, the SNR metric could not show superiority in the evaluations for ResNet50. But we also see in the paper that the SNR score improves by increasing the number of feature dimensions while the Euclidean score descreases by increasing the number of feature dimensions. Because of complexity and runtime reasons, we only trained model with 16 dimensional feature spaces. A possible superiority of SNR in ResNet50 for higher feature dimensions has still to be checked.
+\section{Conclusion}
+In this report, we introduced two different different training approaches in deep metric learning. While structure learning focusses on the optimization of loss functions and data sampling, distance learning tries to improve the distance measures in the feature space. We introduced the basic concepts of the paper \dq A Robust Distance Metric for Deep Metric Learning\dq \, and  summarized the experimental results of the paper. Based on the idea that the SNR metric can be considered as a relative Euclidean metric, we designed the relative Mahalanobis metric which could not show superiority in our own experiments. We could verify the superiority of the SNR metric in our experiments with AlexNets. In our experiments with ResNet50, the Euclidean metric got the highest score for both loss functions.
+\begin{thebibliography}{9}
+
+\bibitem{source1}
+Vorname1 Nachname1
+Titel1
+Verlag1, Jahr1, Ort1
+\bibitem{weinberger}
+Kilian Q Weinberger and Lawrence K Saul. Distance metric
+learning for large margin nearest neighbor classification.
+Journal of Machine Learning Research, 10(Feb):207–244,
+2009.
+\bibitem{contrastive}
+Raia Hadsell, Sumit Chopra, and Yann LeCun. Dimensionality
+reduction by learning an invariant mapping. In null,
+pages 1735–1742. IEEE, 2006.
+\bibitem{triplet}
+Florian Schroff, Dmitry Kalenichenko, and James Philbin.
+Facenet: A unified embedding for face recognition and clustering.
+In CVPR, pages 815–823, 2015.
+
+
+
+\end{thebibliography}
 
 
 
