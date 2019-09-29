@@ -1,3 +1,4 @@
+%%writefile evaluate.py
 import create_loss as crloss
 
 import random
@@ -78,7 +79,6 @@ def K_nearest_neighbors(anchor, comparisonLabels, comparisonSamples, K, metricNa
 def recall_evaluation(batchLabels, batch, comparisonLabels, comparisonSamples, K, metricName, M):
     N = batchLabels.shape[0]
     absoluteScore = 0
-    # calculate average recall for N anchors
     for i in range(0, N):
         anchor = batch[i]
         K_nearest_labels, K_nearest_samples = K_nearest_neighbors(anchor, comparisonLabels, comparisonSamples, K, metricName, M)
@@ -113,7 +113,6 @@ def aP_K(anchorLabel, anchor, comparisonLabels, comparisonSamples, K, metricName
 def mAP_evaluation(batchLabels, batch, comparisonLabels, comparisonSamples, K, metricName, M):
     N = batchLabels.shape[0]
     aPSum = 0
-    # calculate average MAP for N anchors
     for i in range(0, N):
         aPSum = aPSum + aP_K(batchLabels[i], batch[i], comparisonLabels, comparisonSamples, K, metricName, M)
     return aPSum/N
@@ -121,14 +120,13 @@ def mAP_evaluation(batchLabels, batch, comparisonLabels, comparisonSamples, K, m
 def f1_evaluation(batchLabels, batch, comparisonLabels, comparisonSamples, K, metricName, M):
     N = batchLabels.shape[0]
     precisionSum = 0
-    # calculate average precision for N anchors
     for i in range(0, N):
         precisionSum = precisionSum + calculate_precision(batchLabels[i], batch[i], comparisonLabels, comparisonSamples, K, metricName, M)
     precision = precisionSum/N
     recall = recall_evaluation(batchLabels, batch, comparisonLabels, comparisonSamples, K, metricName, M)
     return 2*precision*recall/(precision + recall)
 
-def start_evaluation(architecture, score, data, labels_test, model_path, K, batchSize, embSize, loaderSize, metricName, M=None):
+def start_evaluation(architecture, score, data, labels_test, model_path, K, batchSize, embSize, loaderSize, metricName, matrix_path=None):
     # load model
     if architecture == 'resnet':
         model = models.resnet18(pretrained=False)
@@ -143,12 +141,13 @@ def start_evaluation(architecture, score, data, labels_test, model_path, K, batc
     else:
         raise Exception('Architecture {} not available!'.format(architecture))
     
-    # in case of Mahalanobis or relative Mahalanobis we have an additional model parameter
+    M = torch.eye(embSize)
     if metricName == 'mahalanobis' or metricName == 'relative_mahalanobis':
-        for k, v in model.items():
+        dict_L = torch.load(matrix_path, map_location = 'cpu')
+        for k, v in dict_L.items():
             L = v
-            # M = L^t * L
             M = torch.matmul(torch.transpose(L, 0, 1), L)
+        print(M.shape)
     
     if torch.cuda.is_available():
         model = model.cuda()
@@ -170,6 +169,8 @@ def start_evaluation(architecture, score, data, labels_test, model_path, K, batc
             # feed the network
             embeddings = model(inputs) # BS* m
             counter = counter + 1
+            if counter == 4:
+              break
             print('Iter: [%d/%d]' % (counter, iterations)),
             embeddings = embeddings.to(torch.device("cpu"))
             labels = torch.reshape(labels, (-1,))
