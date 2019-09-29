@@ -3,7 +3,6 @@ import create_loss as crloss
 import random
 import numpy as np
 import itertools as it
-# In[1]:
 import torch
 import torchvision.models as models
 from torch.utils.data import DataLoader
@@ -14,17 +13,45 @@ import os
 import time
 from data.my_dataset import MyDataset
 
-def e_metric(anc, dataset):
-    return (dataset - anc).pow(2).sum(1)
+import fire
+
+def euclidian_metric(anc, dataset):
+    return torch.sqrt((dataset - anc).pow(2).sum(1))
 
 def snr_metric(anc, dataset):
-    lower = (anc - anc.mean()).pow(2).sum()/anc.shape[0]
+    denominator = (anc - anc.mean()).pow(2).sum()/anc.shape[0]
     meanMatrix = (dataset - anc).mean(1).repeat(anc.shape[0],1).t()
-    upper = ((dataset - anc) - meanMatrix).pow(2).sum(1)/anc.shape[0]
-    return upper / lower
-    
+    numerator = ((dataset - anc) - meanMatrix).pow(2).sum(1)/anc.shape[0]
+    return numerator/denominator
 
-def K_nearest_neighbors(anchor, comparisonLabels, comparisonSamples, K):
+def relative_euclidian_metric(anc, dataset):
+    numerator = (dataset - anc).pow(2).sum(1)
+    denominator = anc.pow(2).sum()
+    return numerator/denominator
+  
+def mahalanobis_metric(anc, dataset, M):
+  return torch.mul(torch.matmul(anc - dataset, M), anc - dataset).sum(1)
+  
+def relative_mahalanobis_metric(anc, dataset, M):
+  numerator = mahalanobis_metric(anc, dataset, M)
+  denominator = torch.matmul(anc.view(1,-1), torch.matmul(M, anc.view(-1,1)))
+  return numerator / denominator
+
+def metric(anc, dataset, metricName, M):
+  if metricName == 'euclidian':
+    return euclidian_metric(anc, dataset)
+  elif metricName == 'snr':
+    return snr_metric(anc, dataset)
+  elif metricName == 'relative_euclidian':
+    return relative_euclidian_metric(anc, dataset)
+  elif metricName == 'mahalanobis':
+    return mahalanobis_metric(anc, dataset, M)
+  elif metricName == 'relative_mahalanobis':
+    return relative_mahalanobis_metric(anc, dataset, M)
+  else:
+    raise Exception('Metric {} not available!'.format(metricName))
+
+def K_nearest_neighbors(anchor, comparisonLabels, comparisonSamples, K, metricName, M):
     # useful matrices for filtering anchor out of comparisonSamples
     oneMatrix = torch.ones(comparisonSamples.shape)
     zeroMatrix = torch.zeros(comparisonSamples.shape)
@@ -42,27 +69,28 @@ def K_nearest_neighbors(anchor, comparisonLabels, comparisonSamples, K):
     # calculate K nearest neighbors
     # sort samples by distance from anchor
     dist = crloss.Metric('snr')
-    indexRanking = torch.argsort(e_metric(anchor, filteredSamples))
+    indexRanking = torch.argsort(metric(anchor, filteredSamples, metricName, M))
     # select the K nearest samples
     K_nearest_labels = filteredLabels[indexRanking[0:K]]
     K_nearest_samples = filteredSamples[indexRanking[0:K]]
     return (K_nearest_labels, K_nearest_samples)
   
-def recall_evaluation(batchLabels, batch, comparisonLabels, comparisonSamples, K):
+def recall_evaluation(batchLabels, batch, comparisonLabels, comparisonSamples, K, metricName, M):
     N = batchLabels.shape[0]
     absoluteScore = 0
+    # calculate average recall for N anchors
     for i in range(0, N):
         anchor = batch[i]
-        K_nearest_labels, K_nearest_samples = K_nearest_neighbors(anchor, comparisonLabels, comparisonSamples, K)
+        K_nearest_labels, K_nearest_samples = K_nearest_neighbors(anchor, comparisonLabels, comparisonSamples, K, metricName, M)
         for j in range(0, K):
             if batchLabels[i] == K_nearest_labels[j]:
                 absoluteScore = absoluteScore + 1
                 break
     return absoluteScore/N
 
-def calculate_precision(anchorLabel, anchor, comparisonLabels, comparisonSamples, K):
+def calculate_precision(anchorLabel, anchor, comparisonLabels, comparisonSamples, K, metricName, M):
     absoluteScore = 0
-    K_nearest_labels, K_nearest_samples = K_nearest_neighbors(anchor, comparisonLabels, comparisonSamples, K)
+    K_nearest_labels, K_nearest_samples = K_nearest_neighbors(anchor, comparisonLabels, comparisonSamples, K, metricName, M)
     for i in range(0, K):
         if anchorLabel == K_nearest_labels[i]:
             absoluteScore = absoluteScore + 1
@@ -71,39 +99,56 @@ def calculate_precision(anchorLabel, anchor, comparisonLabels, comparisonSamples
 def compareLabels(label1, label2):
     return 1 if label1 == label2 else 0
 
-def aP_K(anchorLabel, anchor, comparisonLabels, comparisonSamples, K):
+def aP_K(anchorLabel, anchor, comparisonLabels, comparisonSamples, K, metricName, M):
     numeratorSum = 0
     denominatorSum = 0
-    K_nearest_labels, _ = K_nearest_neighbors(anchor, comparisonLabels, comparisonSamples, K)
+    K_nearest_labels, _ = K_nearest_neighbors(anchor, comparisonLabels, comparisonSamples, K, metricName, M)
     for i in range(0, K):
-        precision = calculate_precision(anchorLabel, anchor, comparisonLabels, comparisonSamples, i)
+        precision = calculate_precision(anchorLabel, anchor, comparisonLabels, comparisonSamples, i, metricName, M)
         delta = compareLabels(anchorLabel, K_nearest_labels[i])
         numeratorSum = numeratorSum + precision*delta
         denominatorSum = denominatorSum + delta
     return 0 if denominatorSum == 0 else numeratorSum/denominatorSum
 
-def mAP_evaluation(batchLabels, batch, comparisonLabels, comparisonSamples, K):
+def mAP_evaluation(batchLabels, batch, comparisonLabels, comparisonSamples, K, metricName, M):
     N = batchLabels.shape[0]
     aPSum = 0
+    # calculate average MAP for N anchors
     for i in range(0, N):
-        aPSum = aPSum + aP_K(batchLabels[i], batch[i], comparisonLabels, comparisonSamples, K)
+        aPSum = aPSum + aP_K(batchLabels[i], batch[i], comparisonLabels, comparisonSamples, K, metricName, M)
     return aPSum/N
 
-def f1_evaluation(batchLabels, batch, comparisonLabels, comparisonSamples, K):
+def f1_evaluation(batchLabels, batch, comparisonLabels, comparisonSamples, K, metricName, M):
     N = batchLabels.shape[0]
     precisionSum = 0
+    # calculate average precision for N anchors
     for i in range(0, N):
-        precisionSum = precisionSum + calculate_precision(batchLabels[i], batch[i], comparisonLabels, comparisonSamples, K)
+        precisionSum = precisionSum + calculate_precision(batchLabels[i], batch[i], comparisonLabels, comparisonSamples, K, metricName, M)
     precision = precisionSum/N
-    recall = recall_evaluation(batchLabels, batch, comparisonLabels, comparisonSamples, K)
+    recall = recall_evaluation(batchLabels, batch, comparisonLabels, comparisonSamples, K, metricName, M)
     return 2*precision*recall/(precision + recall)
 
-def start_evaluation(data, labels_test, model_path, K, batchSize, embSize, loaderSize):
+def start_evaluation(architecture, score, data, labels_test, model_path, K, batchSize, embSize, loaderSize, metricName, M=None):
     # load model
-    model = models.alexnet(pretrained=False)
-    inp_fts =  model.classifier[6].in_features
-    model.classifier[6] = nn.Linear(inp_fts, embSize)
-    model.load_state_dict(torch.load(model_path,map_location = 'cpu'))
+    if architecture == 'resnet':
+        model = models.resnet18(pretrained=False)
+        inp_fts =  model.fc.in_features
+        model.fc = nn.Linear(inp_fts, embSize)
+        model.load_state_dict(torch.load(model_path,map_location = 'cpu'))
+    elif architecture == 'alexnet':
+        model = models.alexnet(pretrained=False)
+        inp_fts =  model.classifier[6].in_features
+        model.classifier[6] = nn.Linear(inp_fts, embSize)
+        model.load_state_dict(torch.load(model_path,map_location = 'cpu'))
+    else:
+        raise Exception('Architecture {} not available!'.format(architecture))
+    
+    # in case of Mahalanobis or relative Mahalanobis we have an additional model parameter
+    if metricName == 'mahalanobis' or metricName == 'relative_mahalanobis':
+        for k, v in model.items():
+            L = v
+            # M = L^t * L
+            M = torch.matmul(torch.transpose(L, 0, 1), L)
     
     if torch.cuda.is_available():
         model = model.cuda()
@@ -116,6 +161,7 @@ def start_evaluation(data, labels_test, model_path, K, batchSize, embSize, loade
     labelData = torch.zeros(0)
     sampleData = torch.zeros(0, embSize)
     with torch.no_grad():
+        iterations = len(test_loader)
         for inputs, labels in test_loader:
             # Create vaiables
             if torch.cuda.is_available():
@@ -124,7 +170,7 @@ def start_evaluation(data, labels_test, model_path, K, batchSize, embSize, loade
             # feed the network
             embeddings = model(inputs) # BS* m
             counter = counter + 1
-            print(counter)
+            print('Iter: [%d/%d]' % (counter, iterations)),
             embeddings = embeddings.to(torch.device("cpu"))
             labels = torch.reshape(labels, (-1,))
             labelData = torch.cat((labelData, labels))
@@ -133,6 +179,14 @@ def start_evaluation(data, labels_test, model_path, K, batchSize, embSize, loade
     batchLabels = labelData[0:batchSize]
     batch = sampleData[0:batchSize]
 
-    print(recall_evaluation(batchLabels, batch, labelData, sampleData, K))
+    if score == 'recall':
+        print(recall_evaluation(batchLabels, batch, labelData, sampleData, K, metricName, M))
+    elif score == 'map':
+        print(mAP_evaluation(batchLabels, batch, labelData, sampleData, K, metricName, M))
+    elif score == 'f1':
+        print(f1_evaluation(batchLabels, batch, labelData, sampleData, K, metricName, M))
+    else:
+        raise Exception('Score {} not available!'.format(score))
 
-start_evaluation('./../cars', './labels_test', './../m_0.dat', 2, 600, 16, 500)
+if __name__ == '__main__':
+    fire.Fire(start_evaluation)
