@@ -169,8 +169,6 @@ def start_evaluation(architecture, score, data, labels_test, model_path, K, batc
             # feed the network
             embeddings = model(inputs) # BS* m
             counter = counter + 1
-            if counter == 4:
-              break
             print('Iter: [%d/%d]' % (counter, iterations)),
             embeddings = embeddings.to(torch.device("cpu"))
             labels = torch.reshape(labels, (-1,))
