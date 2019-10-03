@@ -19,3 +19,6 @@ os.chdir('/content/drive/My Drive/where you store the code') # sample os.chdir('
 
 
 # data should be arranged like: ./path to your data/train/xxxx.jpg
+
+**to evaluate the network**
+! python evaluate.py --architecture 'resnet' --score 'recall' --data './../cars' --labels_test './labels_test' --model_path './../t_4.dat' --K 2 --batchSize 600 --embSize 16 --loaderSize 200 --metricName 'euclidian'
