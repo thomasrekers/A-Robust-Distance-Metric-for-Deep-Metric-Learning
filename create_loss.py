@@ -70,6 +70,8 @@ class Sampler():
 			self.give = self.rand_sampler
 		elif method == 'dist':
 			self.give = self.dist_sampler
+		elif method == 'semi':
+			self.give = self.semi_sampler
 		elif method == 'lifted':
 			self.give = self.lifted_sampler
 		else:
@@ -109,9 +111,55 @@ class Sampler():
 		sampled_triplets = random.sample(sampled_triplets, batch.shape[0])
 		return sampled_triplets
 
+	def semi_sampler(self, batch, labels):
 
-	
-	
+
+		if isinstance(labels, torch.Tensor): labels = labels.view(-1).cpu().detach().numpy()
+		label_set, count = np.unique(labels, return_counts=True)
+		label_set  = label_set[count>=2]
+		bs = batch.size(0)
+
+        #Return distance matrix for all elements in batch (BSxBS)
+
+		distances = self.pdist(batch.detach()).detach().cpu().numpy()
+		positives, negatives = [], []
+		anchors = []
+		for i in range(bs):
+			if labels[i] not in label_set: # to eliminate the sample which do not have pot in the batch
+				continue
+
+			l, d = labels[i], distances[i]
+
+			anchors.append(i)
+            #1 for batchelements with label l
+			neg = labels!=l; pos = labels==l
+			pos[i] = False
+
+            #Find negatives that violate triplet constraint semi-negatives
+			neg_mask = np.logical_and(neg,d<d[np.where(pos)[0]].max())
+
+            #Find positives that violate triplet constraint semi-hardly
+
+			pos_mask = np.logical_and(pos,d>d[np.where(neg)[0]].min())
+
+			if pos_mask.sum()>0:
+
+				positives.append(np.random.choice(np.where(pos_mask)[0]))
+
+			else:
+				positives.append(np.random.choice(np.where(pos)[0]))
+			if neg_mask.sum()>0:
+
+				negatives.append(np.random.choice(np.where(neg_mask)[0]))
+
+			else:
+
+				negatives.append(np.random.choice(np.where(neg)[0]))
+
+		sampled_triplets = [[a, p, n] for a, p, n in zip(anchors, positives, negatives)]
+
+		return sampled_triplets
+
 	
 	def dist_sampler(self, batch, labels, lower_cutoff=0.4, upper_cutoff=1.8):
 
@@ -240,12 +288,11 @@ class Sampler():
 			
 			#Sample negatives by distance
 			neg_mask = np.logical_and(neg,d<d[np.where(pos)[0]].max())
-			size = neg_mask.sum()
-			if size< 20:
-				size = 20
-			
-			negatives.append(np.random.choice(bs,size,p=q_d_inv))  # 0~bs  
-			# 存疑https://docs.scipy.org/doc/numpy-1.13.0/reference/generated/numpy.random.choice.html
+			if neg_mask.sum()>0:
+				negatives.append(np.random.choice(np.where(neg_mask)[0],neg_mask.sum().astype(np.int8) ))
+			else:
+				#negatives.append(np.random.choice(bs,20,p=q_d_inv))
+				negatives.append(np.random.choice(np.where(neg)[0],20))
 			
 
 		sampled_lifted = [[a,p,*n] for a,p,n in zip(anchors, positives, negatives)]
@@ -391,6 +438,7 @@ class Metric():
 	
 	def var_(self,a):
 		mean = a.mean()
+		
 		return torch.norm(a-mean).pow(2)/ len(a)
 	
 	def re_(self,anchor,b,cov):
@@ -433,6 +481,7 @@ class Metric():
 		lower = torch.matmul(anchor.view(1,-1),right)
 		
 		d = upper / lower
+		#print(d)
 		
 		return d
 		
@@ -446,7 +495,7 @@ class Metric():
 #____________________________________________________________________________
 class LiftedLoss(torch.nn.Module):
 
-	def __init__(self, e_size , lambda_,sampling_method,metric  ,      margin=1.):
+	def __init__(self, e_size , lambda_,sampling_method,metric  ,      margin=2.):
 
 		"""
 		Args:
@@ -467,7 +516,8 @@ class LiftedLoss(torch.nn.Module):
 		self.e_size = e_size
 		self.lambda_ = lambda_
 		if metric=='rM' or metric =='maha':
-			self.L = torch.nn.Parameter(torch.ones((1,e_size))/e_size)
+			d = torch.ones(e_size)
+			self.L = torch.nn.Parameter(torch.diag(d)) 
 
 
 	def forward(self, batch, labels):
@@ -483,11 +533,13 @@ class LiftedLoss(torch.nn.Module):
 
 		#Sample triplets to use for training.
 		
+		device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+		print('mean',torch.mean(batch))
 		# cal the cov
 		if self.metric_method == 'maha' or self.metric_method == 'rM':
 			cov = torch.mm(self.L.t(),self.L)
 		else:
-			cov =torch.tensor(0.).cuda()
+			cov =torch.tensor(0.).to(device)
 		
 
 		sampled_lifted = self.sampler.give(batch, labels)  # bs* 2+N
@@ -498,9 +550,9 @@ class LiftedLoss(torch.nn.Module):
 		for Npair in sampled_lifted:  # Npair = 
 			d_an = torch.tensor(0.).type(torch.FloatTensor)
 			d_pn = torch.tensor(0.).type(torch.FloatTensor)
-			if torch.cuda.is_available():
-				d_an = d_an.cuda()
-				d_pn  = d_pn.cuda()
+			
+			d_an = d_an.to(device)
+			d_pn  = d_pn.to(device)
 			anchor = batch[Npair[0],:]   # feature of anchor
 			pos = batch[Npair[1],:]     # feature vector of positive
 			
@@ -509,9 +561,12 @@ class LiftedLoss(torch.nn.Module):
 			for neg_idx in Npair[3:]: 
 				 
 				neg = batch[neg_idx,:]
-				d_an += torch.exp(self.margin-self.dist.give(anchor,neg,cov)) # exp(margin - d_an)
-				d_pn += torch.exp(self.margin-self.dist.give(pos,neg,cov))
+				
+				#print(torch.exp(self.margin-self.dist.give(anchor,neg,cov))) # exp(margin - d_an)
+				d_pn += torch.mean(torch.exp(self.margin-self.dist.give(pos,neg,cov)))
+				d_an += torch.mean(torch.exp(self.margin-self.dist.give(anchor,neg,cov)))
 			d = torch.nn.functional.relu(d_ap+torch.log(d_an+d_pn))
+			#print('d_ap',torch.mean(d_ap),'\nd',torch.mean(torch.log(d_an+d_pn)))
 			d_list.append(d)
 			
 		loss =torch.stack(d_list)
@@ -526,7 +581,7 @@ class LiftedLoss(torch.nn.Module):
 
 class MarginLoss(torch.nn.Module):
 
-	def __init__(self, e_size,n_classes,lambda_,metric ,margin=0.5, nu=0, beta=1.2, beta_constant=False, sampling_method='dist'):
+	def __init__(self, e_size,n_classes,lambda_,metric ,margin=0.5, nu=0, beta=1.0, beta_constant=False, sampling_method='dist'):
 
 		"""
 
@@ -566,7 +621,7 @@ class MarginLoss(torch.nn.Module):
 		self.dist = Metric(method = metric)
 		self.metric_method = metric       
 		if metric=='rM' or metric =='maha':
-			self.L = torch.nn.Parameter(torch.ones((1,e_size))/e_size) 
+			self.L = torch.nn.Parameter(torch.randn((1,e_size)))  
 
 	def forward(self, batch, labels):
 
@@ -578,13 +633,14 @@ class MarginLoss(torch.nn.Module):
 		Returns:
 			margin loss (torch.Tensor(), batch-averaged)
 		"""
+		device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 		if self.metric_method == 'maha' or self.metric_method == 'rM':
-			cov = torch.mm(self.L.t(),self.L)
+			cov = torch.mm(self.L.t(),self.L).to(device)
 		else:
-			cov = torch.tensor(0.).cuda()
+			cov = torch.tensor(0.).to(device)
 
 
-		if isinstance(labels, torch.Tensor): labels = labels.view(len(labels)).cpu().detach().numpy()#.astype('int')
+		if isinstance(labels, torch.Tensor): labels = labels.view(len(labels)).cpu().detach().numpy().astype('int')
 		sampled_triplets = self.sampler.give(batch, labels)
 		#Compute distances between anchor-positive and anchor-negative.
 		d_ap, d_an = [],[]
@@ -611,9 +667,9 @@ class MarginLoss(torch.nn.Module):
 			beta = self.beta
 		else:
 
-			beta = torch.stack([self.beta[labels[triplet[0]]] for triplet in sampled_triplets]).type(torch.FloatTensor)
-			if torch.cuda.is_available():
-				beta = beta.cuda()
+			beta = torch.stack([self.beta[labels[triplet[0]]-1] for triplet in sampled_triplets]).type(torch.FloatTensor)
+			
+			beta = beta.to(device)
 
 
 
@@ -625,8 +681,8 @@ class MarginLoss(torch.nn.Module):
 
 		#Compute normalization constant
 		pair_count = torch.sum((pos_loss>0.)+(neg_loss>0.)).type(torch.FloatTensor)
-		if torch.cuda.is_available():
-			pair_count = pair_count.cuda()
+		
+		pair_count = pair_count.to(device)
 		# ** I think pair_count = batch_size,
 
 		#Actual Margin Loss
@@ -645,7 +701,7 @@ class MarginLoss(torch.nn.Module):
 
 class TripletLoss(torch.nn.Module):
 
-	def __init__(self, e_size,lambda_,metric , margin=1, sampling_method='dist'):
+	def __init__(self, e_size,lambda_,metric , margin=1.3, sampling_method='dist'):
 		"""
 		Basic Triplet Loss as proposed in 'FaceNet: A Unified Embedding for Face Recognition and Clustering'
 		Args:
@@ -662,7 +718,8 @@ class TripletLoss(torch.nn.Module):
 		self.lambda_ = lambda_
 		self.e_size = e_size
 		if metric=='rM' or metric =='maha':
-			self.L = torch.nn.Parameter(torch.ones((1,e_size))/e_size) 
+			d = torch.ones(e_size)
+			self.L = torch.nn.Parameter(torch.diag(d))  
 
 	def triplet_distance(self, anchor, positive, negative,cov):
 
@@ -701,14 +758,15 @@ class TripletLoss(torch.nn.Module):
 pr
 		"""
 		
-		
+		device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 		#Sample triplets to use for training.
+		
 		if self.metric_method=='rM' or self.metric_method =='maha':
-			cov = torch.mm(self.L.t(),self.L)
-			
+			cov = torch.mm(self.L.t(),self.L).to(device)
 			print('cov',torch.mean(cov),torch.var(cov))
+			
 		else:
-			cov = torch.tensor(0).cuda()
+			cov = torch.tensor(0).to(device)
 	
 		
 
@@ -717,5 +775,6 @@ pr
 		loss = torch.stack([self.triplet_distance(batch[triplet[0],:],batch[triplet[1],:],batch[triplet[2],:],cov) for triplet in sampled_triplets])
 		idx = loss>=0
 		loss = loss[idx]
-		
+		#print(self.lambda_*torch.sum(torch.abs(torch.sum(batch,1)))/batch.size(0))
+		print('\n',torch.mean(batch))
 		return torch.mean(loss)+self.lambda_*torch.sum(torch.abs(torch.sum(batch,1)))/batch.size(0)
