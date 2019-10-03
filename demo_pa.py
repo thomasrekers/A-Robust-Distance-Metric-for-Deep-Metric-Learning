@@ -206,7 +206,7 @@ def train(model,train_set,  # model and data
 
 
 
-def demo_p(data,save,
+def demo_pa(data,save,fine_tune,
          metric,loss,sampler='rand',embed_size=16,num_cls = 196,  lambda_=0, lr=0.001,T = 0.005,
          model_saved=None,result='r_.csv',model_name='m_.dat',list_file = './cars_train.txt',
          batch_size=100,n_epochs = 10,seed=1):
@@ -260,32 +260,29 @@ def demo_p(data,save,
     train_loader = DataLoader(dataset=train_set, batch_size=batch_size,shuffle=True, num_workers=4,pin_memory=torch.cuda.is_available()) 
     # model_setup
     if model_saved:
-        model = models.resnet18(pretrained=False)
-        #for p in model.parameters():
-         #   p.requires_grad=False
+        model = models.alexnet(pretrained=False)
+        for p in model.parameters():
+            p.requires_grad=False
         
-        inp_fts =  model.fc.in_features
-        #classifier[6].in_features
-        #inp_fts =  model.fc.in_features#model.classifier[6] = nn.Linear(inp_fts, embed_size)
-        
-        model.fc = nn.Linear(inp_fts,embed_size)
+        inp_fts =  model.classifier[6].in_features
+        model.classifier[6] = nn.Linear(inp_fts, embed_size)
         model.load_state_dict(torch.load(os.path.join(save, model_saved),map_location = 'cpu'))
         
-        #if fine_tune:
-        #    for p in model.parameters():
-         #       p.requires_grad = not p.requires_grad
+        if fine_tune:
+            for p in model.parameters():
+                p.requires_grad = not p.requires_grad
     else:
-        model = models.resnet18(pretrained=True)
-        #for p in model.parameters():
-        #    p.requires_grad=False
+        model = models.alexnet(pretrained=True)
+        for p in model.parameters():
+            p.requires_grad=False
         
-        inp_fts =  model.fc.in_features#
-        #inp_fts=model.classifier[6].in_features
-        model.fc = nn.Linear(inp_fts,embed_size)
-        #model.classifier[6] = nn.Linear(inp_fts, embed_size)
-        #if fine_tune:
-         #   for p in model.parameters():
-          #      p.requires_grad = not p.requires_grad
+        
+        inp_fts=model.classifier[6].in_features
+        
+        model.classifier[6] = nn.Linear(inp_fts, embed_size)
+        if fine_tune:
+            for p in model.parameters():
+                p.requires_grad = not p.requires_grad
       
         
     print(model)
@@ -305,7 +302,7 @@ def demo_p(data,save,
     
     
 if __name__ == '__main__':
-    fire.Fire(demo_p)
+    fire.Fire(demo_pa)
   
 
 
